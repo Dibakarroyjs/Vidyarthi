@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0">
+
+    <title>Vidyarthi</title>
+
+    <link rel="stylesheet" href="css/style.css">
+
+</head>
+
+<body>
+
+    <h1>Vidyarthi</h1>
+
+    <h2 class="page-section-title">Student Attendance</h2>
+
+    <div class="student-info">
+
+    <div>
+        <strong>Student:</strong>
+        <span id="studentName"></span>
+    </div>
+
+    <div>
+        <strong>Roll No:</strong>
+        <span id="studentRoll"></span>
+    </div>
+
+    <div>
+        <strong>Reg No:</strong>
+        <span id="studentReg"></span>
+    </div>
+
+    <div>
+        <strong>Phone:</strong>
+        <span id="studentPhone"></span>
+    </div>
+
+</div>
+
+    <div class="subject-controls">
+        <button id="addSubject">+ Add Subject</button>
+    </div>
+
+    <table id="subjectTable">
+
+        <thead>
+            <tr>
+                <th>Subject</th>
+                <th>Total Classes</th>
+                <th>Present</th>
+                <th>Attendance</th>
+                <th>Result</th>
+                <th>Delete</th>
+            </tr>
+        </thead>
+
+        <tbody id="subjectTableBody">
+
+            <tr>
+                <td>Accounts</td>
+                <td><input type="number" class="total-classes"></td>
+                <td><input type="number" class="present-classes"></td>
+                <td class="attendance">0%</td>
+                <td class="subject-result">—</td>
+                <td><button class="delete-subject">×</button></td>
+            </tr>
+
+            <tr>
+                <td>Business</td>
+                <td><input type="number" class="total-classes"></td>
+                <td><input type="number" class="present-classes"></td>
+                <td class="attendance">0%</td>
+                <td class="subject-result">—</td>
+                <td><button class="delete-subject">×</button></td>
+            </tr>
+
+            <tr>
+                <td>Economics</td>
+                <td><input type="number" class="total-classes"></td>
+                <td><input type="number" class="present-classes"></td>
+                <td class="attendance">0%</td>
+                <td class="subject-result">—</td>
+                <td><button class="delete-subject">×</button></td>
+            </tr>
+
+            <tr>
+                <td>BMST</td>
+                <td><input type="number" class="total-classes"></td>
+                <td><input type="number" class="present-classes"></td>
+                <td class="attendance">0%</td>
+                <td class="subject-result">—</td>
+                <td><button class="delete-subject">×</button></td>
+            </tr>
+
+            <tr>
+                <td>English</td>
+                <td><input type="number" class="total-classes"></td>
+                <td><input type="number" class="present-classes"></td>
+                <td class="attendance">0%</td>
+                <td class="subject-result">—</td>
+                <td><button class="delete-subject">×</button></td>
+            </tr>
+
+        </tbody>
+
+    </table>
+
+    <h3>Overall Average: <span id="overallAverage">0%</span></h3>
+
+    <h3>Final Result:</h3>
+
+    <div id="finalResult">-</div>
+
+    <button id="saveButton">Save</button>
+
+    <script type="module" src="js/details.js"></script>
+
+</body>
+</html>
