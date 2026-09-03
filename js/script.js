@@ -237,6 +237,7 @@ async function saveCurrentStudents() {
         }
 
         await setDoc(
+
             doc(
                 db,
                 "users",
@@ -244,13 +245,20 @@ async function saveCurrentStudents() {
                 "students",
                 roll
             ),
+
             {
                 name: name,
                 roll: roll,
                 regNo: regNo,
                 phone: phone
+            },
+
+            {
+                merge: true
             }
+
         );
+
     }
 
 }
