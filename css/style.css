@@ -4,14 +4,22 @@
     box-sizing: border-box;
 }
 
-body {
-    font-family: sans-serif;
-    background: white;
-    
+html {
+    background-color: #111;
+    /* color: white; */
 }
 
+body {
+    font-family: sans-serif;
+    background-color: #111;
+    color: white;
+}
+
+
 h1 {
-    text-align: center;    
+    text-align: center;
+    color: white;
+    margin-top: 15px;
 }
 
 /* Table Container */
@@ -463,11 +471,9 @@ h1 {
 
 @media (max-width: 600px) {
 
-    /* Page spacing */
     body {
-        padding: 15px;
+        padding: 0;
     }
-
 
     /* Main heading */
     h1 {
@@ -617,4 +623,10 @@ h1 {
         margin-bottom: 25px;
     }
 
+}
+
+#subjectTable input {
+    background-color: #1b1b1b;
+    color: white;
+    border: 1px solid #555;
 }

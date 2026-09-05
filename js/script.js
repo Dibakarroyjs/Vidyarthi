@@ -219,6 +219,10 @@ async function loadStudents() {
             }
         }
     }
+    //Hamesha kam se kam 20 student rows dikhao
+    while (studentNumber < 20) {
+        addStudentRow();
+    }
 }
 
 onAuthStateChanged(auth, function (user) {
