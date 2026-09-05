@@ -87,6 +87,17 @@ tableBody.addEventListener("input", function (event) {
     scheduleAutoSave(row);
 });
 
+// List load hone par isi function se result dikhate hain — koi extra
+// Firestore read nahi lagti, kyunki data already loadStudents() se mil chuka hai.
+function renderResultFromData(row, student) {
+    const result = row.querySelector(".student-result");
+    if (!student.attendance) return (result.textContent = "—");
+    const average = Number(student.attendance.average || 0);
+    result.textContent = (student.attendance.eligible ? "✓ Eligible " : "× Not Eligible ") + average.toFixed(1) + "%";
+}
+
+// Sirf tab use hota hai jab tum khud Name/Roll type/edit karte ho —
+// tab live check karne ke liye ek Firestore read lagta hai.
 async function updateStudentResult(row) {
     const { name, roll } = getRowValues(row);
     const result = row.querySelector(".student-result");
@@ -96,12 +107,7 @@ async function updateStudentResult(row) {
     try {
         const snapshot = await getDoc(doc(db, "users", user.uid, "students", buildStudentId(name, roll)));
         if (!snapshot.exists()) return (result.textContent = "—");
-
-        const student = snapshot.data();
-        if (!student.attendance) return (result.textContent = "—");
-
-        const average = Number(student.attendance.average || 0);
-        result.textContent = (student.attendance.eligible ? "✓ Eligible " : "× Not Eligible ") + average.toFixed(1) + "%";
+        renderResultFromData(row, snapshot.data());
     } catch (error) {
         console.error("Result load error:", error);
         result.textContent = "—";
@@ -163,6 +169,15 @@ saveStudents.addEventListener("click", async function () {
     saveStudents.textContent = "Save";
 });
 
+// ============================
+// LOAD STUDENTS FROM FIRESTORE
+// ============================
+// Ismein 2 kaam hote hain:
+// 1) Sirf 1 hi network call se poori list la ke dikhana (extra reads nahi)
+// 2) Purane ID-scheme wale students (jinka doc ID abhi ke Name+Roll se
+//    match nahi karta) ko naye scheme pe migrate karna — isse "duplicate
+//    person" ban jaane wala bug khatam ho jaata hai.
+
 async function loadStudents() {
     const user = auth.currentUser;
     if (!user) return;
@@ -171,9 +186,10 @@ async function loadStudents() {
     tableBody.innerHTML = "";
     studentNumber = 0;
 
-    snapshot.forEach(function (docSnapshot) {
+    for (const docSnapshot of snapshot.docs) {
         const student = docSnapshot.data();
         studentNumber++;
+
         const row = document.createElement("tr");
         row.dataset.docId = docSnapshot.id;
         row.innerHTML = `
@@ -186,8 +202,23 @@ async function loadStudents() {
             <td><span class="student-result">—</span></td>
             <td><button class="delete-student">×</button></td>`;
         tableBody.appendChild(row);
-        updateStudentResult(row);
-    });
+
+        renderResultFromData(row, student);
+
+        // Migration: agar document ID Name+Roll se match nahi karti, sahi ID pe shift karo
+        if (student.name && student.roll) {
+            const correctId = buildStudentId(student.name, student.roll);
+            if (correctId !== docSnapshot.id) {
+                try {
+                    await setDoc(doc(db, "users", user.uid, "students", correctId), student, { merge: true });
+                    await deleteDoc(doc(db, "users", user.uid, "students", docSnapshot.id));
+                    row.dataset.docId = correctId;
+                } catch (error) {
+                    console.error("Migration error:", error);
+                }
+            }
+        }
+    }
 }
 
 onAuthStateChanged(auth, function (user) {
