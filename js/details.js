@@ -1,17 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js";
-
-import {
-    getAuth,
-    onAuthStateChanged
-} from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
-
-import {
-    getFirestore,
-    doc,
-    setDoc,
-    getDoc
-} from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
-
+import { getAuth, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
+import { getFirestore, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 
 const firebaseConfig = {
     apiKey: "AIzaSyCgmw9tm4EVdFFDB6Lx2PdwiTl8axLzpRc",
@@ -23,781 +12,254 @@ const firebaseConfig = {
     measurementId: "G-YE7S5M88CZ"
 };
 
-
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
+const params = new URLSearchParams(window.location.search);
+const studentName = params.get("name") || "";
+const studentRoll = params.get("roll") || "";
+const studentReg = params.get("reg") || "";
+const studentPhone = params.get("phone") || "";
 
-// ============================
-// STUDENT INFORMATION
-// ============================
+document.getElementById("studentName").textContent = studentName;
+document.getElementById("studentRoll").textContent = studentRoll;
+document.getElementById("studentReg").textContent = studentReg;
+document.getElementById("studentPhone").textContent = studentPhone;
 
-const params =
-    new URLSearchParams(window.location.search);
+// Same ID logic jo script.js me hai — sirf Name + Roll No
+const studentDocId = studentRoll.trim().toLowerCase() + "_" + studentName.trim().toLowerCase();
 
-const studentName =
-    params.get("name");
+const addSubject = document.getElementById("addSubject");
+const subjectTableBody = document.getElementById("subjectTableBody");
+const saveButton = document.getElementById("saveButton");
 
-const studentRoll =
-    params.get("roll");
+// Data load hone tak "Loading..." dikhao — isse default placeholder
+// subjects ka flash nahi dikhega jo pehle "refresh" jaisa lagta tha.
+subjectTableBody.innerHTML = `<tr><td colspan="6" style="text-align:center;">Loading...</td></tr>`;
 
-const studentReg =
-    params.get("reg");
-
-const studentPhone =
-    params.get("phone");
-
-
-document.getElementById("studentName").textContent =
-    studentName || "";
-
-document.getElementById("studentRoll").textContent =
-    studentRoll || "";
-
-document.getElementById("studentReg").textContent =
-    studentReg || "";
-
-document.getElementById("studentPhone").textContent =
-    studentPhone || "";
-
-
-// ============================
-// AUTHENTICATION
-// ============================
-
-onAuthStateChanged(auth, function(user) {
-
-    if (!user) {
-
-        window.location.href = "Login.html";
-
-        return;
-    }
-
+onAuthStateChanged(auth, function (user) {
+    if (!user) return (window.location.href = "Login.html");
     loadAttendance();
-
 });
 
+// Naye/first-time student ke liye default 5 subjects
+function renderDefaultSubjects() {
+    const defaults = ["Accounts", "Business", "Economics", "BMST", "English"];
+    subjectTableBody.innerHTML = "";
+    defaults.forEach(function (name) {
+        const row = document.createElement("tr");
+        row.innerHTML = `
+            <td>${name}</td>
+            <td><input type="number" class="total-classes"></td>
+            <td><input type="number" class="present-classes"></td>
+            <td class="attendance">0%</td>
+            <td class="subject-result">—</td>
+            <td><button class="delete-subject">×</button></td>`;
+        subjectTableBody.appendChild(row);
+    });
+    calculateOverall();
+}
 
-// ============================
-// ELEMENTS
-// ============================
-
-const addSubject =
-    document.getElementById("addSubject");
-
-const subjectTableBody =
-    document.getElementById("subjectTableBody");
-
-const saveButton =
-    document.getElementById("saveButton");
-
-
-// ============================
-// ADD SUBJECT
-// ============================
-
-addSubject.addEventListener("click", function() {
-
-    const row =
-        document.createElement("tr");
-
+addSubject.addEventListener("click", function () {
+    const row = document.createElement("tr");
     row.innerHTML = `
-        <td>
-            <input
-                type="text"
-                class="subject-name"
-                placeholder="Subject Name">
-        </td>
-
-        <td>
-            <input
-                type="number"
-                class="total-classes"
-                placeholder="Total"
-                min="0">
-        </td>
-
-        <td>
-            <input
-                type="number"
-                class="present-classes"
-                placeholder="Present"
-                min="0">
-        </td>
-
-        <td class="attendance">
-            0%
-        </td>
-
-        <td class="subject-result">
-            —
-        </td>
-
-        <td>
-            <button class="delete-subject">
-                ×
-            </button>
-        </td>
-    `;
-
+        <td><input type="text" class="subject-name" placeholder="Subject Name"></td>
+        <td><input type="number" class="total-classes" placeholder="Total" min="0"></td>
+        <td><input type="number" class="present-classes" placeholder="Present" min="0"></td>
+        <td class="attendance">0%</td>
+        <td class="subject-result">—</td>
+        <td><button class="delete-subject">×</button></td>`;
     subjectTableBody.appendChild(row);
-
 });
 
-
 // ============================
-// INPUT CALCULATION
+// AUTO-SAVE (koi bhi field change ke ~800ms baad poori list save ho jaati hai)
 // ============================
 
-subjectTableBody.addEventListener(
-    "input",
-    function(event) {
+let autoSaveTimer = null;
+function scheduleAutoSave() {
+    if (autoSaveTimer) clearTimeout(autoSaveTimer);
+    autoSaveTimer = setTimeout(saveAttendance, 800);
+}
 
-        if (
-            event.target.classList.contains(
-                "total-classes"
-            ) ||
-            event.target.classList.contains(
-                "present-classes"
-            )
-        ) {
-
-            const row =
-                event.target.closest("tr");
-
-            calculateRow(row);
-
-            calculateOverall();
-        }
-
+subjectTableBody.addEventListener("input", function (event) {
+    if (event.target.classList.contains("total-classes") || event.target.classList.contains("present-classes")) {
+        calculateRow(event.target.closest("tr"));
+        calculateOverall();
     }
-);
-
-
-// ============================
-// SUBJECT CALCULATION
-// ============================
+    scheduleAutoSave();
+});
 
 function calculateRow(row) {
+    const totalInput = row.querySelector(".total-classes");
+    const presentInput = row.querySelector(".present-classes");
+    const attendance = row.querySelector(".attendance");
+    const result = row.querySelector(".subject-result");
+    if (!totalInput || !presentInput || !attendance || !result) return;
 
-    const totalInput =
-        row.querySelector(".total-classes");
-
-    const presentInput =
-        row.querySelector(".present-classes");
-
-    const attendance =
-        row.querySelector(".attendance");
-
-    const result =
-        row.querySelector(".subject-result");
-
-
-    if (
-        !totalInput ||
-        !presentInput ||
-        !attendance ||
-        !result
-    ) {
-        return;
-    }
-
-
-    const total =
-        Number(totalInput.value);
-
-    const present =
-        Number(presentInput.value);
-
+    const total = Number(totalInput.value);
+    const present = Number(presentInput.value);
 
     if (!total || total <= 0) {
-
         attendance.textContent = "0%";
-
         result.textContent = "—";
-
         return;
     }
 
-
-    const percentage =
-        (present / total) * 100;
-
-
-    attendance.textContent =
-        percentage.toFixed(1) + "%";
-
-
-    if (percentage >= 75) {
-
-        result.textContent =
-            "✓ Pass";
-
-    } else {
-
-        result.textContent =
-            "× Fail";
-    }
-
+    const percentage = (present / total) * 100;
+    attendance.textContent = percentage.toFixed(1) + "%";
+    result.textContent = percentage >= 75 ? "✓ Pass" : "× Fail";
 }
 
-
-// ============================
-// OVERALL CALCULATION
-// ============================
+const getSubjectName = (row) => {
+    const subjectInput = row.querySelector(".subject-name");
+    return subjectInput ? subjectInput.value.trim() : row.querySelector("td").textContent.trim();
+};
 
 function calculateOverall() {
-
-    const rows =
-        subjectTableBody.querySelectorAll("tr");
-
-
-    let totalClassesAll = 0;
-
-    let presentClassesAll = 0;
-
-    let validSubjects = 0;
-
+    let totalClassesAll = 0, presentClassesAll = 0, validSubjects = 0;
     let failedSubjects = [];
 
+    subjectTableBody.querySelectorAll("tr").forEach(function (row) {
+        const totalInput = row.querySelector(".total-classes");
+        const presentInput = row.querySelector(".present-classes");
+        if (!totalInput || !presentInput) return;
 
-    rows.forEach(function(row) {
+        const total = Number(totalInput.value);
+        const present = Number(presentInput.value);
+        if (total <= 0) return;
 
-        const totalInput =
-            row.querySelector(".total-classes");
+        validSubjects++;
+        totalClassesAll += total;
+        presentClassesAll += present;
 
-        const presentInput =
-            row.querySelector(".present-classes");
-
-
-        if (
-            !totalInput ||
-            !presentInput
-        ) {
-            return;
-        }
-
-
-        const total =
-            Number(totalInput.value);
-
-        const present =
-            Number(presentInput.value);
-
-
-        if (total > 0) {
-
-            validSubjects++;
-
-            totalClassesAll += total;
-
-            presentClassesAll += present;
-
-
-            const percentage =
-                (present / total) * 100;
-
-
-            if (percentage < 75) {
-
-                const subjectInput =
-                    row.querySelector(
-                        ".subject-name"
-                    );
-
-
-                let subjectName = "";
-
-
-                if (subjectInput) {
-
-                    subjectName =
-                        subjectInput.value.trim();
-
-                } else {
-
-                    subjectName =
-                        row.querySelector(
-                            "td"
-                        ).textContent.trim();
-                }
-
-
-                failedSubjects.push(
-                    subjectName +
-                    " — " +
-                    percentage.toFixed(1) +
-                    "%"
-                );
-
-            }
-
-        }
-
+        const percentage = (present / total) * 100;
+        if (percentage < 75) failedSubjects.push(getSubjectName(row) + " — " + percentage.toFixed(1) + "%");
     });
 
+    const average = totalClassesAll > 0 ? (presentClassesAll / totalClassesAll) * 100 : 0;
+    document.getElementById("overallAverage").textContent = average.toFixed(1) + "%";
 
-    let average = 0;
-
-
-    if (totalClassesAll > 0) {
-
-        average =
-            (presentClassesAll /
-            totalClassesAll) * 100;
-
-    }
-
-
-    document.getElementById(
-        "overallAverage"
-    ).textContent =
-        average.toFixed(1) + "%";
-
-
-    const finalResult =
-        document.getElementById(
-            "finalResult"
-        );
-
-
-    if (validSubjects === 0) {
-
-        finalResult.innerHTML =
-            "—";
-
-        return;
-    }
-
-
-    if (failedSubjects.length === 0) {
-
-        finalResult.innerHTML = `
-            ✓ PASS
-            <br>
-            ✓ ELIGIBLE
-        `;
-
-    } else {
-
-        finalResult.innerHTML = `
-            × NOT ELIGIBLE
-            <br><br>
-            Below 75%:
-            <br>
-            ${failedSubjects.join("<br>")}
-        `;
-
-    }
-
+    const finalResult = document.getElementById("finalResult");
+    if (validSubjects === 0) finalResult.innerHTML = "—";
+    else if (failedSubjects.length === 0) finalResult.innerHTML = "✓ PASS<br>✓ ELIGIBLE";
+    else finalResult.innerHTML = "× NOT ELIGIBLE<br><br>Below 75%:<br>" + failedSubjects.join("<br>");
 }
 
-
-// ============================
-// DELETE SUBJECT
-// ============================
-
-subjectTableBody.addEventListener(
-    "click",
-    function(event) {
-
-        if (
-            event.target.classList.contains(
-                "delete-subject"
-            )
-        ) {
-
-            event.target
-                .closest("tr")
-                .remove();
-
-            calculateOverall();
-
-        }
-
+subjectTableBody.addEventListener("click", function (event) {
+    if (event.target.classList.contains("delete-subject")) {
+        event.target.closest("tr").remove();
+        calculateOverall();
+        scheduleAutoSave();
     }
-);
-
+});
 
 // ============================
-// SAVE TO FIRESTORE
+// SAVE TO FIRESTORE (manual button aur auto-save dono isi ko use karte hain)
 // ============================
 
-saveButton.addEventListener(
-    "click",
-    async function() {
+async function saveAttendance() {
+    const user = auth.currentUser;
+    if (!user || !studentName || !studentRoll) return false;
 
-        const user =
-            auth.currentUser;
+    const subjectsData = [];
+    let failedSubjects = [], totalClassesAll = 0, presentClassesAll = 0, validSubjects = 0;
 
+    subjectTableBody.querySelectorAll("tr").forEach(function (row) {
+        const totalInput = row.querySelector(".total-classes");
+        const presentInput = row.querySelector(".present-classes");
+        if (!totalInput || !presentInput) return;
 
-        if (!user) {
+        const subjectName = getSubjectName(row);
+        const total = Number(totalInput.value);
+        const present = Number(presentInput.value);
 
-            alert(
-                "Please login first."
-            );
-
-            return;
+        if (total > 0) {
+            validSubjects++;
+            totalClassesAll += total;
+            presentClassesAll += present;
+            const percentage = (present / total) * 100;
+            if (percentage < 75) failedSubjects.push(subjectName + " — " + percentage.toFixed(1) + "%");
         }
 
-
-        if (!studentRoll) {
-
-            alert(
-                "Student Roll No. not found."
-            );
-
-            return;
-        }
-
-
-        const subjectsData = [];
-
-        const rows =
-            subjectTableBody.querySelectorAll(
-                "tr"
-            );
-
-
-        let failedSubjects = [];
-
-        let totalClassesAll = 0;
-
-        let presentClassesAll = 0;
-
-        let validSubjects = 0;
-
-
-        rows.forEach(function(row) {
-
-            const subjectInput =
-                row.querySelector(
-                    ".subject-name"
-                );
-
-
-            let subjectName = "";
-
-
-            if (subjectInput) {
-
-                subjectName =
-                    subjectInput.value.trim();
-
-            } else {
-
-                subjectName =
-                    row.querySelector(
-                        "td"
-                    ).textContent.trim();
-
-            }
-
-
-            const total =
-                Number(
-                    row.querySelector(
-                        ".total-classes"
-                    ).value
-                );
-
-
-            const present =
-                Number(
-                    row.querySelector(
-                        ".present-classes"
-                    ).value
-                );
-
-
-            if (total > 0) {
-
-                validSubjects++;
-
-                totalClassesAll += total;
-
-                presentClassesAll += present;
-
-
-                const percentage =
-                    (present / total) * 100;
-
-
-                if (percentage < 75) {
-
-                    failedSubjects.push(
-                        subjectName +
-                        " — " +
-                        percentage.toFixed(1) +
-                        "%"
-                    );
-
-                }
-
-            }
-
-
-            subjectsData.push({
-
-                subject:
-                    subjectName,
-
-                totalClasses:
-                    total,
-
-                presentClasses:
-                    present
-
-            });
-
-        });
-
-
-        // IMPORTANT:
-        // Same calculation as screen
-
-        let average = 0;
-
-
-        if (totalClassesAll > 0) {
-
-            average =
-                (presentClassesAll /
-                totalClassesAll) * 100;
-
-        }
-
-
-        const studentResult = {
-
-            roll:
-                studentRoll,
-
-            average:
-                average,
-
-            eligible:
-                failedSubjects.length === 0 &&
-                validSubjects > 0,
-
-            failedSubjects:
-                failedSubjects,
-
-            subjects:
-                subjectsData
-
-        };
-
-
-        try {
-
-            saveButton.disabled = true;
-
-            saveButton.textContent =
-                "Saving...";
-
-
-            await setDoc(
-
-                doc(
-                    db,
-                    "users",
-                    user.uid,
-                    "students",
-                    studentRoll
-                ),
-
-                {
-                    attendance:
-                        studentResult
-                },
-
-                {
-                    merge: true
-                }
-
-            );
-
-
-            alert(
-                "Details saved successfully!"
-            );
-
-
-        } catch (error) {
-
-            console.error(
-                "Firestore save error:",
-                error
-            );
-
-            alert(
-                "Details save nahi ho paya."
-            );
-
-
-        } finally {
-
-            saveButton.disabled = false;
-
-            saveButton.textContent =
-                "Save";
-
-        }
-
+        subjectsData.push({ subject: subjectName, totalClasses: total, presentClasses: present });
+    });
+
+    const average = totalClassesAll > 0 ? (presentClassesAll / totalClassesAll) * 100 : 0;
+
+    const studentResult = {
+        roll: studentRoll,
+        average,
+        eligible: failedSubjects.length === 0 && validSubjects > 0,
+        failedSubjects,
+        subjects: subjectsData
+    };
+
+    const data = { name: studentName, roll: studentRoll, attendance: studentResult };
+    if (studentReg) data.regNo = studentReg;
+    if (studentPhone) data.phone = studentPhone;
+
+    try {
+        await setDoc(doc(db, "users", user.uid, "students", studentDocId), data, { merge: true });
+        return true;
+    } catch (error) {
+        console.error("Firestore save error:", error);
+        return false;
     }
-);
+}
 
+saveButton.addEventListener("click", async function () {
+    if (!studentName || !studentRoll) return alert("Student Name/Roll No. not found.");
+
+    saveButton.disabled = true;
+    saveButton.textContent = "Saving...";
+
+    const ok = await saveAttendance();
+    alert(ok ? "Details saved successfully!" : "Details save nahi ho paya.");
+
+    saveButton.disabled = false;
+    saveButton.textContent = "Save";
+});
 
 // ============================
 // LOAD ATTENDANCE FROM FIRESTORE
 // ============================
 
 async function loadAttendance() {
-
-    const user =
-        auth.currentUser;
-
-
-    if (
-        !user ||
-        !studentRoll
-    ) {
-        return;
-    }
-
+    const user = auth.currentUser;
+    if (!user || !studentName || !studentRoll) return renderDefaultSubjects();
 
     try {
+        const snapshot = await getDoc(doc(db, "users", user.uid, "students", studentDocId));
+        const data = snapshot.exists() ? snapshot.data() : null;
+        const subjects = data && data.attendance && Array.isArray(data.attendance.subjects) ? data.attendance.subjects : null;
 
-        const studentRef =
-            doc(
-                db,
-                "users",
-                user.uid,
-                "students",
-                studentRoll
-            );
-
-
-        const snapshot =
-            await getDoc(
-                studentRef
-            );
-
-
-        if (!snapshot.exists()) {
-
+        if (!subjects || subjects.length === 0) {
+            renderDefaultSubjects();
             return;
         }
 
+        subjectTableBody.innerHTML = "";
 
-        const data =
-            snapshot.data();
-
-
-        if (!data.attendance) {
-
-            return;
-        }
-
-
-        const subjects =
-            data.attendance.subjects;
-
-
-        if (
-            !Array.isArray(subjects)
-        ) {
-
-            return;
-        }
-
-
-        subjectTableBody.innerHTML =
-            "";
-
-
-        subjects.forEach(
-            function(subject) {
-
-                const row =
-                    document.createElement(
-                        "tr"
-                    );
-
-
-                row.innerHTML = `
-                    <td>
-                        <input
-                            type="text"
-                            class="subject-name">
-                    </td>
-
-                    <td>
-                        <input
-                            type="number"
-                            class="total-classes"
-                            value="${subject.totalClasses ?? ""}"
-                            min="0">
-                    </td>
-
-                    <td>
-                        <input
-                            type="number"
-                            class="present-classes"
-                            value="${subject.presentClasses ?? ""}"
-                            min="0">
-                    </td>
-
-                    <td class="attendance">
-                        0%
-                    </td>
-
-                    <td class="subject-result">
-                        —
-                    </td>
-
-                    <td>
-                        <button class="delete-subject">
-                            ×
-                        </button>
-                    </td>
-                `;
-
-
-                subjectTableBody.appendChild(
-                    row
-                );
-
-
-                row.querySelector(
-                    ".subject-name"
-                ).value =
-                    subject.subject || "";
-
-
-                calculateRow(row);
-
-            }
-        );
-
+        subjects.forEach(function (subject) {
+            const row = document.createElement("tr");
+            row.innerHTML = `
+                <td><input type="text" class="subject-name"></td>
+                <td><input type="number" class="total-classes" value="${subject.totalClasses ?? ""}" min="0"></td>
+                <td><input type="number" class="present-classes" value="${subject.presentClasses ?? ""}" min="0"></td>
+                <td class="attendance">0%</td>
+                <td class="subject-result">—</td>
+                <td><button class="delete-subject">×</button></td>`;
+            subjectTableBody.appendChild(row);
+            row.querySelector(".subject-name").value = subject.subject || "";
+            calculateRow(row);
+        });
 
         calculateOverall();
-
-
     } catch (error) {
-
-        console.error(
-            "Firestore load error:",
-            error
-        );
-
-        alert(
-            "Attendance load nahi ho paya."
-        );
-
+        console.error("Firestore load error:", error);
+        renderDefaultSubjects();
+        alert("Attendance load nahi ho paya.");
     }
-
 }

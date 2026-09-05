@@ -1,19 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-app.js";
-
-import {
-    getAuth,
-    onAuthStateChanged
-} from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
-
-import {
-    getFirestore,
-    collection,
-    doc,
-    setDoc,
-    getDocs,
-    getDoc,
-    deleteDoc
-} from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
+import { getAuth, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
+import { getFirestore, collection, doc, setDoc, getDocs, getDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 
 const firebaseConfig = {
     apiKey: "AIzaSyCgmw9tm4EVdFFDB6Lx2PdwiTl8axLzpRc",
@@ -25,491 +12,226 @@ const firebaseConfig = {
     measurementId: "G-YE7S5M88CZ"
 };
 
-
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-
 const tableBody = document.getElementById("studentTableBody");
-
-// Plus button
 const addButton = document.getElementById("addButton");
+const saveStudents = document.getElementById("saveStudents");
+const searchInput = document.getElementById("searchInput");
+const logoutButton = document.getElementById("logoutButton");
 
 let studentNumber = 0;
 
+// ID sirf Name + Roll No se banti hai. Reg No/Phone sirf search ke liye hain, ID me shamil nahi.
+const buildStudentId = (name, roll) => roll.trim().toLowerCase() + "_" + name.trim().toLowerCase();
 
-// New student row create karne ka function
+const getRowValues = (row) => {
+    const inputs = row.querySelectorAll("input");
+    return {
+        name: inputs[0]?.value.trim() || "",
+        roll: inputs[1]?.value.trim() || "",
+        regNo: inputs[2]?.value.trim() || "",
+        phone: inputs[3]?.value.trim() || ""
+    };
+};
+
+function findConflictingRow(row, newId) {
+    for (const r of tableBody.querySelectorAll("tr")) {
+        if (r === row) continue;
+        const { name, roll } = getRowValues(r);
+        if (name && roll && buildStudentId(name, roll) === newId) return { name, roll };
+    }
+    return null;
+}
+
 function addStudentRow() {
-
     studentNumber++;
-
     const row = document.createElement("tr");
-
+    row.dataset.docId = "";
     row.innerHTML = `
-    <td>${studentNumber}</td>
-
-    <td>
-        <input type="text" class="student-name" placeholder="Name">
-    </td>
-
-    <td>
-        <input type="text" class="roll-no" placeholder="Roll No.">
-    </td>
-
-    <td>
-        <input type="text" placeholder="Reg No.">
-    </td>
-
-    <td>
-        <input type="text" placeholder="Ph No.">
-    </td>
-
-    <td>
-        <button class="details-btn">View</button>
-    </td>
-
-    <td>
-        <span class="student-result">—</span>
-    </td>
-`;
-
+        <td>${studentNumber}</td>
+        <td><input type="text" class="student-name" placeholder="Name"></td>
+        <td><input type="text" class="roll-no" placeholder="Roll No."></td>
+        <td><input type="text" placeholder="Reg No."></td>
+        <td><input type="text" placeholder="Ph No."></td>
+        <td><button class="details-btn">View</button></td>
+        <td><span class="student-result">—</span></td>`;
     tableBody.appendChild(row);
 }
-
-
-// + button click
 addButton.addEventListener("click", addStudentRow);
 
-tableBody.addEventListener("click", function(event) {
-
+tableBody.addEventListener("click", function (event) {
     if (event.target.classList.contains("details-btn")) {
-
         const row = event.target.closest("tr");
-
-        const inputs = row.querySelectorAll("input");
-
-        const name = inputs[0].value;
-        const roll = inputs[1].value;
-        const reg = inputs[2].value;
-        const phone = inputs[3].value;
-
-        if (name === "" || roll === "") {
-            alert("Please enter Name and Roll No.");
-            return;
-        }
-
-        window.location.href =
-            `details.html?name=${encodeURIComponent(name)}&roll=${encodeURIComponent(roll)}&reg=${encodeURIComponent(reg)}&phone=${encodeURIComponent(phone)}`;
+        const { name, roll, regNo, phone } = getRowValues(row);
+        if (!name || !roll) return alert("Please enter Name and Roll No.");
+        window.location.href = `details.html?name=${encodeURIComponent(name)}&roll=${encodeURIComponent(roll)}&reg=${encodeURIComponent(regNo)}&phone=${encodeURIComponent(phone)}`;
     }
-
 });
 
+// Auto-save: typing rukne ke ~800ms baad row apne aap save hoti hai
+const autoSaveTimers = new WeakMap();
+function scheduleAutoSave(row) {
+    if (autoSaveTimers.has(row)) clearTimeout(autoSaveTimers.get(row));
+    autoSaveTimers.set(row, setTimeout(() => saveRow(row), 800));
+}
 
-tableBody.addEventListener("input", function(event) {
-
-    if (
-        event.target.classList.contains("student-name") ||
-        event.target.classList.contains("roll-no")
-    ) {
-        updateStudentResult(event.target.closest("tr"));
+tableBody.addEventListener("input", function (event) {
+    const row = event.target.closest("tr");
+    if (!row) return;
+    if (event.target.classList.contains("student-name") || event.target.classList.contains("roll-no")) {
+        updateStudentResult(row);
     }
-
+    scheduleAutoSave(row);
 });
-
 
 async function updateStudentResult(row) {
-
-    const roll =
-        row.querySelector(".roll-no").value.trim();
-
-    const result =
-        row.querySelector(".student-result");
-
-    if (roll === "") {
-        result.textContent = "—";
-        return;
-    }
-
+    const { name, roll } = getRowValues(row);
+    const result = row.querySelector(".student-result");
     const user = auth.currentUser;
-
-    if (!user) {
-        result.textContent = "—";
-        return;
-    }
+    if (!name || !roll || !user) return (result.textContent = "—");
 
     try {
+        const snapshot = await getDoc(doc(db, "users", user.uid, "students", buildStudentId(name, roll)));
+        if (!snapshot.exists()) return (result.textContent = "—");
 
-        const studentRef =
-            doc(
-                db,
-                "users",
-                user.uid,
-                "students",
-                roll
-            );
+        const student = snapshot.data();
+        if (!student.attendance) return (result.textContent = "—");
 
-        const snapshot =
-            await getDoc(studentRef);
-
-        if (!snapshot.exists()) {
-
-            result.textContent = "—";
-            return;
-        }
-
-        const student =
-            snapshot.data();
-
-        if (!student.attendance) {
-
-            result.textContent = "—";
-            return;
-        }
-
-        const attendance =
-            student.attendance;
-
-        const average =
-            Number(attendance.average || 0);
-
-        if (attendance.eligible) {
-
-            result.textContent =
-                "✓ Eligible " +
-                average.toFixed(1) +
-                "%";
-
-        } else {
-
-            result.textContent =
-                "× Not Eligible " +
-                average.toFixed(1) +
-                "%";
-        }
-
+        const average = Number(student.attendance.average || 0);
+        result.textContent = (student.attendance.eligible ? "✓ Eligible " : "× Not Eligible ") + average.toFixed(1) + "%";
     } catch (error) {
-
-        console.error(
-            "Result load error:",
-            error
-        );
-
+        console.error("Result load error:", error);
         result.textContent = "—";
     }
 }
 
+// Save ek row ka data (auto-save aur bulk Save dono isi ko use karte hain)
+async function saveRow(row) {
+    const user = auth.currentUser;
+    if (!user) return false;
 
-const saveStudents = document.getElementById("saveStudents");
+    const { name, roll, regNo, phone } = getRowValues(row);
+    if (!name || !roll) return false;
 
+    const newId = buildStudentId(name, roll);
+    const oldId = row.dataset.docId || "";
 
-// ============================
-// SAVE ALL STUDENTS
-// ============================
+    const conflict = findConflictingRow(row, newId);
+    if (conflict) {
+        alert(
+            `Ye Name + Roll No ("${name}" / "${roll}") pehle se list me maujood hai.\n` +
+            `In dono students ko alag pehchanne ke liye Reg No ya Phone Number check/update karo.`
+        );
+        return false;
+    }
+
+    const data = { name, roll };
+    if (regNo) data.regNo = regNo;
+    if (phone) data.phone = phone;
+
+    try {
+        await setDoc(doc(db, "users", user.uid, "students", newId), data, { merge: true });
+        if (oldId && oldId !== newId) await deleteDoc(doc(db, "users", user.uid, "students", oldId));
+        row.dataset.docId = newId;
+        return true;
+    } catch (error) {
+        console.error("Save error:", error);
+        return false;
+    }
+}
 
 async function saveCurrentStudents() {
-
     const user = auth.currentUser;
-
-    if (!user) {
-        alert("Please login first.");
-        return;
-    }
-
-    const rows = tableBody.querySelectorAll("tr");
-
-    for (const row of rows) {
-
-        const inputs =
-            row.querySelectorAll("input");
-
-        if (inputs.length < 4) {
-            continue;
-        }
-
-        const name = inputs[0].value.trim();
-        const roll = inputs[1].value.trim();
-        const regNo = inputs[2].value.trim();
-        const phone = inputs[3].value.trim();
-
-        if (roll === "") {
-            continue;
-        }
-
-        await setDoc(
-
-            doc(
-                db,
-                "users",
-                user.uid,
-                "students",
-                roll
-            ),
-
-            {
-                name: name,
-                roll: roll,
-                regNo: regNo,
-                phone: phone
-            },
-
-            {
-                merge: true
-            }
-
-        );
-
-    }
-
+    if (!user) return alert("Please login first.");
+    for (const row of tableBody.querySelectorAll("tr")) await saveRow(row);
 }
 
-
-saveStudents.addEventListener("click", async function() {
-
+saveStudents.addEventListener("click", async function () {
     saveStudents.disabled = true;
     saveStudents.textContent = "Saving...";
-
     try {
-
         await saveCurrentStudents();
-
         alert("Students saved successfully!");
-
     } catch (error) {
-
         console.error("Save error:", error);
-
         alert("Students could not be saved.");
-
     }
-
     saveStudents.disabled = false;
     saveStudents.textContent = "Save";
-
 });
 
-
-
-// ============================
-// LOAD STUDENTS FROM FIRESTORE
-// ============================
-
 async function loadStudents() {
-
     const user = auth.currentUser;
+    if (!user) return;
 
-    if (!user) {
-        return;
-    }
-
-    const studentsRef =
-        collection(db, "users", user.uid, "students");
-
-    const snapshot =
-        await getDocs(studentsRef);
-
+    const snapshot = await getDocs(collection(db, "users", user.uid, "students"));
     tableBody.innerHTML = "";
     studentNumber = 0;
 
-    snapshot.forEach(function(docSnapshot) {
-
+    snapshot.forEach(function (docSnapshot) {
         const student = docSnapshot.data();
-
         studentNumber++;
-
-        const row =
-            document.createElement("tr");
-
+        const row = document.createElement("tr");
+        row.dataset.docId = docSnapshot.id;
         row.innerHTML = `
             <td>${studentNumber}</td>
-
-            <td>
-                <input
-                    type="text"
-                    class="student-name"
-                    value="${student.name || ""}">
-            </td>
-
-            <td>
-                <input
-                    type="text"
-                    class="roll-no"
-                    value="${student.roll || ""}">
-            </td>
-
-            <td>
-                <input
-                    type="text"
-                    value="${student.regNo || ""}">
-            </td>
-
-            <td>
-                <input
-                    type="text"
-                    value="${student.phone || ""}">
-            </td>
-
-            <td>
-                <button class="details-btn">
-                    View
-                </button>
-            </td>
-
-            <td>
-                <span class="student-result">—</span>
-            </td>
-
-            <td>
-                <button class="delete-student">
-                    Delete
-                </button>
-            </td>
-        `;
-
+            <td><input type="text" class="student-name" value="${student.name || ""}"></td>
+            <td><input type="text" class="roll-no" value="${student.roll || ""}"></td>
+            <td><input type="text" value="${student.regNo || ""}"></td>
+            <td><input type="text" value="${student.phone || ""}"></td>
+            <td><button class="details-btn">View</button></td>
+            <td><span class="student-result">—</span></td>
+            <td><button class="delete-student">×</button></td>`;
         tableBody.appendChild(row);
-
         updateStudentResult(row);
-
     });
-
 }
 
-
-// Wait until Firebase knows which user is logged in
-onAuthStateChanged(auth, function(user) {
-
-    if (!user) {
-
-        window.location.href = "Login.html";
-
-        return;
-    }
-
+onAuthStateChanged(auth, function (user) {
+    if (!user) return (window.location.href = "Login.html");
     loadStudents();
-
 });
-
-
-const searchInput = document.getElementById("searchInput");
 
 searchInput.addEventListener("input", function () {
-
     const searchValue = searchInput.value.toLowerCase().trim();
-
-    const rows = tableBody.querySelectorAll("tr");
-
-    rows.forEach(function (row) {
-
-        const inputs = row.querySelectorAll("input");
-
-        const name = inputs[0].value.toLowerCase();
-        const roll = inputs[1].value.toLowerCase();
-        const reg = inputs[2].value.toLowerCase();
-        const phone = inputs[3].value.toLowerCase();
-
-        if (
-            name.includes(searchValue) ||
-            roll.includes(searchValue) ||
-            reg.includes(searchValue) ||
-            phone.includes(searchValue)
-        ) {
-
-            row.style.display = "";
-
-        } else {
-
-            row.style.display = "none";
-
-        }
-
+    tableBody.querySelectorAll("tr").forEach(function (row) {
+        const { name, roll, regNo, phone } = getRowValues(row);
+        const match = [name, roll, regNo, phone].some(v => v.toLowerCase().includes(searchValue));
+        row.style.display = match ? "" : "none";
     });
-
 });
 
-
-
-// DELETE STUDENT
-// ============================
-
-tableBody.addEventListener("click", async function(event) {
-
-    if (!event.target.classList.contains("delete-student")) {
-        return;
-    }
+tableBody.addEventListener("click", async function (event) {
+    if (!event.target.classList.contains("delete-student")) return;
 
     const row = event.target.closest("tr");
+    const { name, roll } = getRowValues(row);
+    const id = row.dataset.docId || (name && roll ? buildStudentId(name, roll) : "");
 
-    const roll =
-        row.querySelector(".roll-no").value.trim();
-
-    if (roll === "") {
-        row.remove();
-        return;
-    }
-
-    const confirmDelete =
-        confirm("Kya aap is student ka pura data delete karna chahte hain?");
-
-    if (!confirmDelete) {
-        return;
-    }
+    if (!id) return row.remove();
+    if (!confirm("Kya aap is student ka pura data delete karna chahte hain?")) return;
 
     const user = auth.currentUser;
-
-    if (!user) {
-        alert("Please login first.");
-        return;
-    }
+    if (!user) return alert("Please login first.");
 
     try {
-
-        await deleteDoc(
-            doc(
-                db,
-                "users",
-                user.uid,
-                "students",
-                roll
-            )
-        );
-
+        await deleteDoc(doc(db, "users", user.uid, "students", id));
         row.remove();
-
         alert("Student deleted successfully!");
-
     } catch (error) {
-
         console.error("Delete error:", error);
-
         alert("Student delete nahi ho paya.");
-
     }
-
 });
 
-// ============================
-// LOGOUT
-// ============================
-
-import { signOut } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
-
-const logoutButton =
-    document.getElementById("logoutButton");
-
 logoutButton.addEventListener("click", function () {
-
     signOut(auth)
-        .then(function () {
-
-            window.location.href = "Login.html";
-
-        })
-        .catch(function (error) {
-
+        .then(() => (window.location.href = "Login.html"))
+        .catch((error) => {
             console.error("Logout error:", error);
-
             alert("Logout failed. Please try again.");
-
         });
-
 });
