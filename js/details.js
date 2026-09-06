@@ -45,7 +45,7 @@ onAuthStateChanged(auth, function (user) {
 
 // Naye/first-time student ke liye default 5 subjects
 function renderDefaultSubjects() {
-    const defaults = ["Accounts", "Business", "Economics", "BMST", "English"];
+    const defaults = ["Financial Management(DSC301)", "Financial Institutions and Services(DSC302)", "Indirect Tax Law(DSC303)", "Business Mathematics(DSM301)", "Economy of North-East India(DSM302)"];
     subjectTableBody.innerHTML = "";
     defaults.forEach(function (name) {
         const row = document.createElement("tr");
